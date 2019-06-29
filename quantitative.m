@@ -9,7 +9,8 @@
 
 PixelSize = 0.87;  % pixel size 0.87 um
 
-% filter_coor = {'volume > 1000','barycenterZ > 100'};
+% filter_coor = {'EqDiameter > 10','Sphericity > 0.5'}; %% &
+filter_coor = {'EqDiameter > 10'};
 
 %% -------------------------------------------------------------------------
 [I1,filename] = import_raw();  % imread 3D image stack
@@ -21,16 +22,33 @@ PixelSize = 0.87;  % pixel size 0.87 um
 structu = gyration_tensor(vol,gray_value,PixelSize);
 % The structure parameters of each partical will be saved in 'structu'
 
-histo = histogram_(structu);
+structu = filter_(structu,filter_coor);
+% filtration
+
+histo = histogram_(structu,Volume3dBin=10000,EqDiameterBin=10,StructuBin=0.05);
 % Statistics for structural parameters
 
 visual_(histo,filename);
 % visualization statistics
 
-clear gray_value M N K PixelSize vol I1 filename;
+save([filename,'.mat'],'histo','structu','-v7.3');
+
+clear gray_value M N K PixelSize vol I1 filename filter_coor;
 
 %% -------------------------------------------------------------------------
-function [ histo ] = histogram_(structu)
+function [structu ] = filter_(structu,filter_coor);
+
+index_ = [];
+if ~isempty(filter_coor),
+for i = 1:size(filter_coor,2), filter_coor{1,i} = ['structu(i).',filter_coor{1,i}]; end
+filter_info = strjoin(filter_coor,'&');
+for i = 1:size(structu,2), if ~eval(filter_info), index_(end+1) = i; end,end,end
+structu(index) = [];
+
+end
+
+%% -------------------------------------------------------------------------
+function [ histo ] = histogram_(structu,Volume3dBin,EqDiameterBin,StructuBin)
 
 histo = struct('Volume3d',[],'EqDiameter',[],'Sphericity',[],...
 	'ElongationIndex',[],'FlatnessIndex',[],'Convexity',[]);
@@ -44,7 +62,7 @@ FlatnessIndex(i,1) = structu(i).FlatnessIndex;
 Convexity(i,1) = structu(i).Convexity;
 end
 
-edge_Volume3d = 0:max(Volume3d)/20:max(Volume3d);
+edge_Volume3d = 0:Volume3dBin:max(Volume3d);
 % statistical interval of Volume3d
 histo.Volume3d(:,1) = (edge_Volume3d(1:end-1)+edge_Volume3d(2:end))/2;
 h = histogram(Volume3d,edge_Volume3d);
@@ -52,7 +70,7 @@ histo.Volume3d(:,2) = h.Values/sum(h.Values);
 histo.Volume3d(:,3) = cumsum(histo.Volume3d(:,2));
 
 
-edge_EqDiameter = 0:max(EqDiameter)/20:max(EqDiameter);
+edge_EqDiameter = 0:EqDiameterBin:max(EqDiameter);
 % statistical interval of EqDiameter
 histo.EqDiameter(:,1) = (edge_EqDiameter(1:end-1)+edge_EqDiameter(2:end))/2;
 h = histogram(EqDiameter,edge_EqDiameter);
@@ -60,7 +78,7 @@ histo.EqDiameter(:,2) = h.Values/sum(h.Values);
 histo.EqDiameter(:,3) = cumsum(histo.EqDiameter(:,2));
 
 
-edge_structu = 0:0.05:1;
+edge_structu = 0:StructuBin:1;
 % statistical interval of S,EI,FI,Cx
 histo.Sphericity(:,1) = (edge_structu(1:end-1)+edge_structu(2:end))/2;
 histo.ElongationIndex(:,1) = (edge_structu(1:end-1)+edge_structu(2:end))/2;
@@ -287,12 +305,15 @@ structu(i).FlatnessIndex = structu(i).EigenValC/structu(i).EigenValB;
 % The ratio of the smallest to the medium eigenvalue of the covariance 
 % matrix. Flat objects have small values close to 0.
 
-%[triangulation, ConvexVolume] = convhulln(vol{i,1}(:,1),vol{i,1}(:,2),vol{i,1}(:,3));
-[triangulation, ConvexVolume] = convhulln(vol{i,1});
+if structu(i).Volume3d > 100,
+[triangulation, ConvexVolume] = convhull(vol{i,1}(:,1),vol{i,1}(:,2),vol{i,1}(:,3));
+%[triangulation, ConvexVolume] = convhulln(vol{i,1});
 structu(i).Convexity = structu(i).Volume3d/ConvexVolume;
 % The ratio of the volume of convex hull to original volume.
 % BUG : Convexity of those partical which cropped by field of view will
 % larger then 1. It's not reasonable.
+else, structu(i).Convexity = 1;
+end
 
 % correlation from pixel to um
 structu(i).BaryCenterX = structu(i).BaryCenterX*PixelSize; 
